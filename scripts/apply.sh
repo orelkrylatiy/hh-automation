@@ -18,6 +18,8 @@ MAX_RESPONSES="${APPLY_LIMIT:-${LIMIT:-100}}"
 PER_PAGE="${APPLY_PER_PAGE:-50}"
 TOTAL_PAGES="${APPLY_PAGES:-20}"
 RUN_TIMEOUT="${APPLY_RUN_TIMEOUT:-3600}"
+RESPONSE_DELAY="${APPLY_RESPONSE_DELAY:-1-3}"
+RESUME_ID="${APPLY_RESUME_ID:-}"
 SYSTEM_PROMPT="${SYSTEM_PROMPT:-$PROJECT_ROOT/prompts/cover_letter_frontend.txt}"
 HARD_FILTER_FILE="${APPLY_HARD_FILTER_FILE:-$PROJECT_ROOT/rules/apply-hard-filter.regex}"
 EXCLUDED_FILTER="${EXCLUDED_FILTER:-}"
@@ -44,6 +46,11 @@ while [[ $# -gt 0 ]]; do
             SEARCH_QUERY="$2"
             shift 2
             ;;
+        --resume-id)
+            [[ $# -ge 2 ]] || { echo "--resume-id requires a value" >&2; exit 2; }
+            RESUME_ID="$2"
+            shift 2
+            ;;
         --limit|--max-responses)
             [[ $# -ge 2 ]] || { echo "$1 requires a value" >&2; exit 2; }
             MAX_RESPONSES="$2"
@@ -62,6 +69,11 @@ while [[ $# -gt 0 ]]; do
         --timeout)
             [[ $# -ge 2 ]] || { echo "--timeout requires seconds" >&2; exit 2; }
             RUN_TIMEOUT="$2"
+            shift 2
+            ;;
+        --response-delay)
+            [[ $# -ge 2 ]] || { echo "--response-delay requires a value" >&2; exit 2; }
+            RESPONSE_DELAY="$2"
             shift 2
             ;;
         --system-prompt)
@@ -92,10 +104,12 @@ Usage: apply.sh [--dry-run|--live] [options]
 
   --live                    Send real applications. Default is dry-run.
   --search QUERY            Search query.
+  --resume-id ID            Apply using one explicit resume.
   --limit N                 Maximum successful applications for this run.
   --per-page N              Search results per page (default: 50).
   --pages N                 Maximum search pages (default: 20).
   --timeout SECONDS         Upper bound for the whole batch (default: 3600).
+  --response-delay RANGE    Delay between successful applications (default: 1-3).
   --system-prompt FILE      AI system prompt template.
   --hard-filter-file FILE   File with one exclusion regex per line.
   --excluded-filter REGEX   Inline emergency override for the hard filter.
@@ -135,6 +149,26 @@ if (( PER_PAGE > 100 )); then
     echo "PER_PAGE cannot exceed 100" >&2
     exit 2
 fi
+if [[ -n "$RESUME_ID" && "$RESUME_ID" == -* ]]; then
+    echo "RESUME_ID cannot start with '-': $RESUME_ID" >&2
+    exit 2
+fi
+python3 - "$RESPONSE_DELAY" <<'PY'
+import sys
+
+parts = sys.argv[1].split("-")
+try:
+    values = [float(part) for part in parts]
+except ValueError as exc:
+    print(f"Invalid response delay: {sys.argv[1]}", file=sys.stderr)
+    raise SystemExit(2) from exc
+if len(values) not in {1, 2} or any(value < 0 for value in values):
+    print(f"Invalid response delay: {sys.argv[1]}", file=sys.stderr)
+    raise SystemExit(2)
+if len(values) == 2 and values[0] > values[1]:
+    print(f"Invalid response delay range: {sys.argv[1]}", file=sys.stderr)
+    raise SystemExit(2)
+PY
 
 FILTER_SOURCE="EXCLUDED_FILTER"
 if [[ -z "$EXCLUDED_FILTER" ]]; then
@@ -212,12 +246,16 @@ APPLY_CMD=(
     --excluded-filter "$EXCLUDED_FILTER"
     --skip-tests
     --max-responses "$MAX_RESPONSES"
+    --response-delay "$RESPONSE_DELAY"
     --per-page "$PER_PAGE"
     --total-pages "$TOTAL_PAGES"
-    "${MODE_ARGS[@]}"
 )
+if [[ -n "$RESUME_ID" ]]; then
+    APPLY_CMD+=(--resume-id "$RESUME_ID")
+fi
+APPLY_CMD+=("${MODE_ARGS[@]}")
 
-echo "HH apply: mode=$RUN_MODE query='$SEARCH_QUERY' hard_filter='$FILTER_SOURCE' max_responses=$MAX_RESPONSES scan=$TOTAL_PAGES*$PER_PAGE timeout=${RUN_TIMEOUT}s"
+echo "HH apply: mode=$RUN_MODE query='$SEARCH_QUERY' hard_filter='$FILTER_SOURCE' max_responses=$MAX_RESPONSES scan=$TOTAL_PAGES*$PER_PAGE delay=$RESPONSE_DELAY timeout=${RUN_TIMEOUT}s resume=${RESUME_ID:-auto}"
 
 if command -v timeout >/dev/null 2>&1; then
     timeout --signal=TERM --kill-after=30 "${RUN_TIMEOUT}s" "${APPLY_CMD[@]}"
