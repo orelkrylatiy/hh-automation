@@ -16,5 +16,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install ruff==0.16.5
-      - name: Print import fix
-        run: ruff check --select I --fix --diff tests/test_reply_worker.py
+      - name: Print format diff
+        run: |
+          ruff format --diff \
+            src/hh_applicant_tool/automation/reply_worker.py \
+            scripts/reply_iterative_ai.py \
+            tests/test_reply_worker.py
