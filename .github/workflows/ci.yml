@@ -40,9 +40,11 @@ jobs:
           ruff check \
             src/hh_applicant_tool/automation \
             src/hh_applicant_tool/ai/openai.py \
+            src/hh_applicant_tool/operations/apply_safe.py \
             scripts/reply_iterative_ai.py \
             scripts/check_ai.py \
             scripts/ops/daily_report.py \
+            tests/test_apply_safe.py \
             tests/test_reply_worker.py \
             tests/test_ai_openai_retry.py \
             tests/test_check_ai.py \
@@ -54,9 +56,11 @@ jobs:
           ruff format --check \
             src/hh_applicant_tool/automation \
             src/hh_applicant_tool/ai/openai.py \
+            src/hh_applicant_tool/operations/apply_safe.py \
             scripts/reply_iterative_ai.py \
             scripts/check_ai.py \
             scripts/ops/daily_report.py \
+            tests/test_apply_safe.py \
             tests/test_reply_worker.py \
             tests/test_ai_openai_retry.py \
             tests/test_check_ai.py \
@@ -71,6 +75,9 @@ jobs:
             --cov=hh_applicant_tool.automation.reply_worker \
             --cov-report=term-missing \
             --cov-fail-under=75
+
+      - name: Cover-letter fallback regression tests
+        run: pytest tests/test_apply_safe.py
 
       - name: LLM client regression tests
         run: pytest tests/test_ai_openai_retry.py tests/test_check_ai.py
