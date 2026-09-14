@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..ai.base import AIError
 from ..api import datatypes
 from ..utils.misc import expand_env_placeholders, load_prompt
 from ..utils.string import rand_text
 from ._apply_vacancies_apply_flow import VacancyResponseResult
-from .apply_vacancies import Namespace, Operation as BaseApplyOperation
+from .apply_vacancies import Namespace
+from .apply_vacancies import Operation as BaseApplyOperation
 
 if TYPE_CHECKING:
     from ..main import HHApplicantTool
