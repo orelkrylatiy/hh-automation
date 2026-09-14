@@ -1,0 +1,51 @@
+# HH application hard filter.
+# One Python regular expression per line. Empty lines and lines starting with # are ignored.
+# Matching is case-insensitive and is applied to vacancy title/snippet and full description.
+
+# Junior / internship roles
+(?<!\w)junior(?!\w)
+(?<!\w)jun(?!\w)
+(?<!\w)intern(?:ship)?(?!\w)
+(?<!\w)trainee(?!\w)
+джун(?:иор)?\w*
+стаж[её]р\w*
+стажир\w*
+младш\w*
+без\s+опыта
+
+# Non-target languages and stacks
+(?<!\w)c\+\+(?!\w)
+(?<!\w)c#(?!\w)
+(?<!\w)qt(?!\w)
+(?<!\w)golang(?!\w)
+(?<!\w)python(?!\w)
+(?<!\w)java(?!\w)
+(?<!\w)1c(?!\w)
+(?<!\w)1с(?!\w)
+(?<!\w)bitrix(?!\w)
+битрикс\w*
+(?<!\w)web3(?!\w)
+(?<!\w)crypto(?!\w)
+(?<!\w)blockchain(?!\w)
+
+# Non-target roles
+продакт\w*
+менеджер\w*
+(?<!\w)pm(?!\w)
+дизайнер\w*
+(?<!\w)qa(?!\w)
+тестировщик\w*
+(?<!\w)devops(?!\w)
+аналитик\w*
+(?<!\w)data(?!\w)
+(?<!\w)sales(?!\w)
+продаж\w*
+рекрутер\w*
+(?<!\w)hr(?!\w)
+
+# Existing location / office exclusions
+казан\w*
+(?<!\w)спб(?!\w)
+минск\w*
+open\s*space
+опенспейс
