@@ -156,7 +156,7 @@ def message_role(message: dict[str, Any]) -> str:
         author = message.get("author")
         if isinstance(author, dict):
             participant = str(author.get("participant_type") or "").upper()
-            return participant if participant in ("EMPLOYER", "APPLICANT") else ""
+            return participant if participant in (EMPLOYER_ROLE, APPLICANT_ROLE) else ""
         return ""
     return str(sender.get("role") or "").upper()
 
@@ -174,8 +174,22 @@ def message_id(message: dict[str, Any]) -> str:
     return str(message.get("id") or "")
 
 
+def message_created_at(message: dict[str, Any]) -> str:
+    """Timestamp for both current /negotiations and legacy /common/chats payloads."""
+    return str(message.get("created_at") or message.get("creation_time") or "").strip()
+
+
 def sorted_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(messages, key=lambda item: str(item.get("creation_time") or ""))
+    """Return chat messages oldest-first, failing closed if order is unknowable."""
+    if not messages:
+        return []
+    if any(not message_created_at(item) for item in messages):
+        logger.warning(
+            "HH chat history contains a message without created_at/creation_time; "
+            "refusing to infer the latest sender"
+        )
+        return []
+    return sorted(messages, key=message_created_at)
 
 
 def sanitize_reply_text(text: str) -> str:
@@ -233,6 +247,7 @@ def build_context(messages: list[dict[str, Any]]) -> tuple[list[str], bool]:
 
 
 def deterministic_idempotency_key(chat_id: str, employer_message_id: str) -> str:
+    """Stable key retained for callers; /negotiations does not accept it on POST."""
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"hh-reply:{chat_id}:{employer_message_id}"))
 
 
@@ -282,10 +297,10 @@ class ReplyWorker:
                         "Could not load messages for negotiation %s: %s", negotiation_id, exc
                     )
                     continue
-                if not messages:
+                ordered = sorted_messages(messages)
+                if not ordered:
                     continue
-                last_message = sorted_messages(messages)[-1]
-                if message_role(last_message) != EMPLOYER_ROLE:
+                if message_role(ordered[-1]) != EMPLOYER_ROLE:
                     continue
                 chats.append(item)
                 if len(chats) >= self.config.max_chats:
@@ -421,7 +436,9 @@ class ReplyWorker:
         correction = ""
         for attempt in range(self.config.ai_retries + 1):
             try:
-                reply = sanitize_reply_text(self.ai.complete(self._generation_prompt(decision, correction)).strip())
+                reply = sanitize_reply_text(
+                    self.ai.complete(self._generation_prompt(decision, correction)).strip()
+                )
             except OpenAIError as exc:
                 logger.error("AI failed for chat %s: %s", decision.chat_id, exc)
                 return None
@@ -462,11 +479,6 @@ class ReplyWorker:
     def send_reply(self, decision: ReplyDecision, text: str) -> bool:
         if self.config.dry_run:
             return True
-        key = deterministic_idempotency_key(
-            decision.chat_id,
-            decision.expected_last_message_id,
-        )
-        payload = {"idempotency_key": key, "text": text}
         for attempt in range(self.config.send_retries + 1):
             try:
                 self.hh.call_api(
