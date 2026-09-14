@@ -13,8 +13,15 @@ _ADMIN_DIR = Path(__file__).parent
 _INDEX_PATH = _ADMIN_DIR / "index.html"
 _CSS_PATH = _ADMIN_DIR / "ui.css"
 _JS_PATH = _ADMIN_DIR / "ui.js"
+_OPS_CSS_PATH = _ADMIN_DIR / "ops_ui.css"
 _OPS_JS_PATH = _ADMIN_DIR / "ops_ui.js"
-_UI_GET_PATHS = {"/", "/admin-ui.css", "/admin-ui.js", "/admin-ops.js"}
+_UI_GET_PATHS = {
+    "/",
+    "/admin-ui.css",
+    "/admin-ui.js",
+    "/admin-ops.css",
+    "/admin-ops.js",
+}
 
 
 def _is_replaced_ui_route(route: object) -> bool:
@@ -52,6 +59,14 @@ def install_ui_routes(target: FastAPI) -> FastAPI:
         return FileResponse(
             _JS_PATH,
             media_type="text/javascript; charset=utf-8",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @target.get("/admin-ops.css", include_in_schema=False)
+    def admin_ops_css() -> FileResponse:
+        return FileResponse(
+            _OPS_CSS_PATH,
+            media_type="text/css; charset=utf-8",
             headers={"Cache-Control": "no-cache"},
         )
 
