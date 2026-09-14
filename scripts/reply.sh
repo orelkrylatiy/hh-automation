@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
 Usage: reply.sh [--dry-run|--live] [--chats N] [--profile ID]
 
   --dry-run       Inspect chats and print deterministic previews; never calls AI or sends.
-  --live          Generate replies with AI and send them through /common/chats.
+  --live          Generate replies with AI and send them through /negotiations/{id}/messages.
   --chats N       Maximum candidate chats for this cron run (default: 100).
   --profile ID    HH profile id.
 EOF
