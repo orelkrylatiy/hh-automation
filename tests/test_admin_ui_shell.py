@@ -22,10 +22,14 @@ def test_ui_shell_replaces_external_animation_dependency_and_injects_local_asset
     rendered = render_index_html(source)
 
     assert "cdnjs.cloudflare.com" not in rendered
-    assert rendered.count("/admin-ui.css?v=2") == 1
-    assert rendered.count("/admin-ui.js?v=2") == 1
-    assert rendered.index("/admin-ui.css?v=2") < rendered.index("</head>")
-    assert rendered.index("/admin-ui.js?v=2") < rendered.index("</body>")
+    assert rendered.count("/admin-ui.css?v=3") == 1
+    assert rendered.count("/admin-ops.css?v=1") == 1
+    assert rendered.count("/admin-ui.js?v=3") == 1
+    assert rendered.count("/admin-ops.js?v=1") == 1
+    assert rendered.index("/admin-ui.css?v=3") < rendered.index("</head>")
+    assert rendered.index("/admin-ops.css?v=1") < rendered.index("</head>")
+    assert rendered.index("/admin-ui.js?v=3") < rendered.index("</body>")
+    assert rendered.index("/admin-ops.js?v=1") < rendered.index("</body>")
 
 
 def test_ui_shell_is_idempotent():
@@ -33,13 +37,17 @@ def test_ui_shell_is_idempotent():
     once = render_index_html(source)
     twice = render_index_html(once)
 
-    assert twice.count("/admin-ui.css?v=2") == 1
-    assert twice.count("/admin-ui.js?v=2") == 1
+    assert twice.count("/admin-ui.css?v=3") == 1
+    assert twice.count("/admin-ops.css?v=1") == 1
+    assert twice.count("/admin-ui.js?v=3") == 1
+    assert twice.count("/admin-ops.js?v=1") == 1
 
 
 def test_admin_ui_assets_cover_responsive_accessible_behaviour():
     css = (ROOT / "admin" / "ui.css").read_text(encoding="utf-8")
     js = (ROOT / "admin" / "ui.js").read_text(encoding="utf-8")
+    ops_css = (ROOT / "admin" / "ops_ui.css").read_text(encoding="utf-8")
+    ops_js = (ROOT / "admin" / "ops_ui.js").read_text(encoding="utf-8")
 
     assert "@media (max-width: 900px)" in css
     assert "table.admin-responsive-table" in css
@@ -54,6 +62,12 @@ def test_admin_ui_assets_cover_responsive_accessible_behaviour():
     assert "event.metaKey" in js
     assert "event.ctrlKey" in js
 
+    assert "ops-source-banner" in ops_css
+    assert "@media (max-width: 760px)" in ops_css
+    assert "/api/ops" in ops_js
+    assert "production apply-safe" in ops_js
+    assert "opsLoadLog" in ops_js
+
 
 def test_runtime_launchers_use_enhanced_admin_app():
     windows_launcher = (ROOT / "admin.bat").read_text(encoding="utf-8")
@@ -65,15 +79,25 @@ def test_runtime_launchers_use_enhanced_admin_app():
     assert "admin.app:app" not in container_launcher
 
 
-def test_enhanced_admin_app_imports_with_single_root_route():
+def test_enhanced_admin_app_imports_with_single_ui_and_ops_routes():
     code = """
 from admin.ui_app import app
-root = [r for r in app.router.routes if getattr(r, 'path', None) == '/' and 'GET' in (getattr(r, 'methods', None) or set())]
-css = [r for r in app.router.routes if getattr(r, 'path', None) == '/admin-ui.css']
-js = [r for r in app.router.routes if getattr(r, 'path', None) == '/admin-ui.js']
-assert len(root) == 1, len(root)
-assert len(css) == 1, len(css)
-assert len(js) == 1, len(js)
+
+def count(path, method='GET'):
+    return len([
+        route for route in app.router.routes
+        if getattr(route, 'path', None) == path
+        and method in (getattr(route, 'methods', None) or set())
+    ])
+
+assert count('/') == 1
+assert count('/admin-ui.css') == 1
+assert count('/admin-ops.css') == 1
+assert count('/admin-ui.js') == 1
+assert count('/admin-ops.js') == 1
+assert count('/api/run/apply-vacancies', 'POST') == 1
+assert count('/api/run/reply-employers', 'POST') == 1
+assert count('/api/run/update-resumes', 'POST') == 1
 """
     proc = subprocess.run(
         [sys.executable, "-c", code],
