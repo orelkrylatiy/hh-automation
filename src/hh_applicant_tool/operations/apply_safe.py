@@ -69,11 +69,15 @@ class Operation(BaseApplyOperation):
 
         if self.cover_letter_ai:
             try:
-                letter = super()._build_cover_letter(
-                    vacancy,
-                    resume,
-                    message_placeholders,
-                ).strip()
+                letter = (
+                    super()
+                    ._build_cover_letter(
+                        vacancy,
+                        resume,
+                        message_placeholders,
+                    )
+                    .strip()
+                )
                 if letter:
                     return letter
                 raise AIError("cover-letter AI returned an empty message")
@@ -95,9 +99,7 @@ class Operation(BaseApplyOperation):
         resume_id: str,
         letter: str,
     ) -> VacancyResponseResult:
-        if (
-            self.force_message or vacancy.get("response_letter_required")
-        ) and not letter.strip():
+        if (self.force_message or vacancy.get("response_letter_required")) and not letter.strip():
             logger.error(
                 "Refusing to apply without a required cover letter: %s",
                 vacancy.get("alternate_url", vacancy.get("id")),
