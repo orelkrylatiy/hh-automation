@@ -2,57 +2,63 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 
-from .app import app
+from .app import app as backend_app
 from .ui_shell import render_index_html
 
 _ADMIN_DIR = Path(__file__).parent
 _INDEX_PATH = _ADMIN_DIR / "index.html"
 _CSS_PATH = _ADMIN_DIR / "ui.css"
 _JS_PATH = _ADMIN_DIR / "ui.js"
+_UI_GET_PATHS = {"/", "/admin-ui.css", "/admin-ui.js"}
 
 
-def _is_legacy_root_route(route: object) -> bool:
+def _is_replaced_ui_route(route: object) -> bool:
     path = getattr(route, "path", None)
     methods = getattr(route, "methods", None) or set()
-    return path == "/" and "GET" in methods
+    return path in _UI_GET_PATHS and "GET" in methods
 
 
-# ``admin.app`` remains the backend source of truth. Replace only its legacy
-# index route so all API routes, middleware and auth behaviour stay identical.
-app.router.routes[:] = [
-    route for route in app.router.routes if not _is_legacy_root_route(route)
-]
+def install_ui_routes(target: FastAPI) -> FastAPI:
+    """Replace only the legacy HTML shell while preserving backend/API routes."""
+    target.router.routes[:] = [
+        route for route in target.router.routes if not _is_replaced_ui_route(route)
+    ]
+
+    @target.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def index() -> HTMLResponse:
+        if not _INDEX_PATH.exists():
+            return HTMLResponse("<h1>index.html not found</h1>", status_code=404)
+        html = render_index_html(_INDEX_PATH.read_text(encoding="utf-8"))
+        return HTMLResponse(
+            html,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @target.get("/admin-ui.css", include_in_schema=False)
+    def admin_ui_css() -> FileResponse:
+        return FileResponse(
+            _CSS_PATH,
+            media_type="text/css; charset=utf-8",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    @target.get("/admin-ui.js", include_in_schema=False)
+    def admin_ui_js() -> FileResponse:
+        return FileResponse(
+            _JS_PATH,
+            media_type="text/javascript; charset=utf-8",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    return target
 
 
-@app.get("/", response_class=HTMLResponse, include_in_schema=False)
-def index() -> HTMLResponse:
-    if not _INDEX_PATH.exists():
-        return HTMLResponse("<h1>index.html not found</h1>", status_code=404)
-    html = render_index_html(_INDEX_PATH.read_text(encoding="utf-8"))
-    return HTMLResponse(
-        html,
-        headers={"Cache-Control": "no-store"},
-    )
-
-
-@app.get("/admin-ui.css", include_in_schema=False)
-def admin_ui_css() -> FileResponse:
-    return FileResponse(
-        _CSS_PATH,
-        media_type="text/css; charset=utf-8",
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
-@app.get("/admin-ui.js", include_in_schema=False)
-def admin_ui_js() -> FileResponse:
-    return FileResponse(
-        _JS_PATH,
-        media_type="text/javascript; charset=utf-8",
-        headers={"Cache-Control": "no-cache"},
-    )
+# ``admin.app`` remains the backend source of truth. We swap only the root
+# shell and local visual assets; auth middleware and all API endpoints remain.
+app = install_ui_routes(backend_app)
 
 
 if __name__ == "__main__":
