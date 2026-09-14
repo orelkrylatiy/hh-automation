@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any, TYPE_CHECKING
 
 from ..ai.base import AIError
 from ..api import datatypes
