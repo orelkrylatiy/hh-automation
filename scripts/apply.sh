@@ -19,7 +19,8 @@ PER_PAGE="${APPLY_PER_PAGE:-50}"
 TOTAL_PAGES="${APPLY_PAGES:-20}"
 RUN_TIMEOUT="${APPLY_RUN_TIMEOUT:-3600}"
 SYSTEM_PROMPT="${SYSTEM_PROMPT:-$PROJECT_ROOT/prompts/cover_letter_frontend.txt}"
-EXCLUDED_FILTER="${EXCLUDED_FILTER:-junior|стажир|bitrix|web3|crypto|blockchain|golang|python|java|1c|продакт|менеджер|pm|дизайнер|qa|тестировщик|devops|аналитик|data|sales|продаж|рекрутер|hr|без опыта|trainee|казань|спб|минск|open\s*space|опенспейс}"
+HARD_FILTER_FILE="${APPLY_HARD_FILTER_FILE:-$PROJECT_ROOT/rules/apply-hard-filter.regex}"
+EXCLUDED_FILTER="${EXCLUDED_FILTER:-}"
 RUN_MODE="dry-run"
 RUN_MODE_EXPLICIT=""
 PROFILE_ID="${HH_PROFILE_ID:-}"
@@ -68,6 +69,12 @@ while [[ $# -gt 0 ]]; do
             SYSTEM_PROMPT="$2"
             shift 2
             ;;
+        --hard-filter-file)
+            [[ $# -ge 2 ]] || { echo "--hard-filter-file requires a value" >&2; exit 2; }
+            HARD_FILTER_FILE="$2"
+            EXCLUDED_FILTER=""
+            shift 2
+            ;;
         --excluded-filter)
             [[ $# -ge 2 ]] || { echo "--excluded-filter requires a value" >&2; exit 2; }
             EXCLUDED_FILTER="$2"
@@ -83,15 +90,21 @@ while [[ $# -gt 0 ]]; do
             cat <<'EOF'
 Usage: apply.sh [--dry-run|--live] [options]
 
-  --live                 Send real applications. Default is dry-run.
-  --search QUERY         Search query.
-  --limit N              Maximum successful applications for this run.
-  --per-page N           Search results per page (default: 50).
-  --pages N              Maximum search pages (default: 20).
-  --timeout SECONDS      Upper bound for the whole batch (default: 3600).
-  --system-prompt FILE   AI system prompt template.
-  --excluded-filter REGEX
+  --live                    Send real applications. Default is dry-run.
+  --search QUERY            Search query.
+  --limit N                 Maximum successful applications for this run.
+  --per-page N              Search results per page (default: 50).
+  --pages N                 Maximum search pages (default: 20).
+  --timeout SECONDS         Upper bound for the whole batch (default: 3600).
+  --system-prompt FILE      AI system prompt template.
+  --hard-filter-file FILE   File with one exclusion regex per line.
+  --excluded-filter REGEX   Inline emergency override for the hard filter.
   --profile ID
+
+The default hard filter is loaded from rules/apply-hard-filter.regex. Override
+its path with APPLY_HARD_FILTER_FILE. EXCLUDED_FILTER remains available as an
+inline runtime override, but the repository does not hardcode vacancy stop words
+inside the application code.
 
 The scan depth is intentionally independent from --limit. This lets the worker
 skip irrelevant/already-applied vacancies and continue until it reaches the
@@ -117,6 +130,38 @@ if (( PER_PAGE > 100 )); then
     echo "PER_PAGE cannot exceed 100" >&2
     exit 2
 fi
+
+FILTER_SOURCE="EXCLUDED_FILTER"
+if [[ -z "$EXCLUDED_FILTER" ]]; then
+    FILTER_SOURCE="$HARD_FILTER_FILE"
+    if [[ ! -f "$HARD_FILTER_FILE" ]]; then
+        echo "Hard-filter file not found: $HARD_FILTER_FILE" >&2
+        exit 1
+    fi
+    EXCLUDED_FILTER="$(
+        sed \
+            -e 's/\r$//' \
+            -e '/^[[:space:]]*#/d' \
+            -e '/^[[:space:]]*$/d' \
+            "$HARD_FILTER_FILE" \
+            | paste -sd'|' -
+    )"
+    if [[ -z "$EXCLUDED_FILTER" ]]; then
+        echo "Hard-filter file has no active patterns: $HARD_FILTER_FILE" >&2
+        exit 1
+    fi
+fi
+
+python3 - "$EXCLUDED_FILTER" <<'PY'
+import re
+import sys
+
+try:
+    re.compile(sys.argv[1], re.IGNORECASE)
+except re.error as exc:
+    print(f"Invalid hard-filter regex: {exc}", file=sys.stderr)
+    raise SystemExit(2) from exc
+PY
 
 if [[ ! -f "$SYSTEM_PROMPT" ]]; then
     echo "Cover-letter prompt not found: $SYSTEM_PROMPT" >&2
@@ -165,7 +210,7 @@ APPLY_CMD=(
     "${MODE_ARGS[@]}"
 )
 
-echo "HH apply: mode=$RUN_MODE query='$SEARCH_QUERY' max_responses=$MAX_RESPONSES scan=$TOTAL_PAGES*$PER_PAGE timeout=${RUN_TIMEOUT}s"
+echo "HH apply: mode=$RUN_MODE query='$SEARCH_QUERY' hard_filter='$FILTER_SOURCE' max_responses=$MAX_RESPONSES scan=$TOTAL_PAGES*$PER_PAGE timeout=${RUN_TIMEOUT}s"
 
 if command -v timeout >/dev/null 2>&1; then
     timeout --signal=TERM --kill-after=30 "${RUN_TIMEOUT}s" "${APPLY_CMD[@]}"
