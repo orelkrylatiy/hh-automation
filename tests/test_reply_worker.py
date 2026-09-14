@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import subprocess
 from typing import Any
 from unittest.mock import Mock
@@ -9,20 +8,19 @@ import pytest
 
 from hh_applicant_tool.ai.openai import OpenAIError
 from hh_applicant_tool.automation.reply_worker import (
-    sanitize_reply_text,
     APPLICANT_ROLE,
     EMPLOYER_ROLE,
     HHCLI,
-    MAX_REPLY_CHARS,
     HHCLIError,
+    MAX_REPLY_CHARS,
     ReplyDecision,
     ReplyWorker,
     ReplyWorkerConfig,
     build_ai_client,
     build_context,
-    deterministic_idempotency_key,
     load_json_config,
     reply_quality_issues,
+    sanitize_reply_text,
     select_ai_config,
 )
 
@@ -30,19 +28,9 @@ from hh_applicant_tool.automation.reply_worker import (
 def _message(message_id: str, role: str, text: str, timestamp: str) -> dict[str, Any]:
     return {
         "id": message_id,
-        "creation_time": timestamp,
-        "sender_display_info": {"role": role},
-        "payload": {"text": text},
-    }
-
-
-def _detail(*messages: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": "chat-1",
-        "display": {"title": "Frontend developer"},
-        "vacancy_id": "vacancy-1",
-        "chat_states": {"write_message_state": {"allowed": True}},
-        "messages": list(messages),
+        "created_at": timestamp,
+        "author": {"participant_type": role.lower()},
+        "text": text,
     }
 
 
@@ -151,7 +139,9 @@ def test_humanizer_rejects_placeholders_long_dash_and_ai_cliches() -> None:
 
 
 def test_sanitize_reply_replaces_long_dashes_with_hyphen() -> None:
-    assert sanitize_reply_text("Да — удобно. Также–проверка — ок.") == "Да - удобно. Также-проверка - ок."
+    assert sanitize_reply_text("Да — удобно. Также–проверка — ок.") == (
+        "Да - удобно. Также-проверка - ок."
+    )
     assert sanitize_reply_text("") == ""
 
 
@@ -164,26 +154,17 @@ def test_humanizer_rejects_empty_and_oversized_reply() -> None:
     assert "reply is too long" in reply_quality_issues("а" * (MAX_REPLY_CHARS + 1))
 
 
-def test_build_context_sorts_and_ignores_unknown_roles() -> None:
+def test_build_context_sorts_real_negotiation_messages_and_ignores_unknown_roles() -> None:
     context, initiated_by_us = build_context(
         [
-            _message("2", EMPLOYER_ROLE, "Второе", "2026-01-01T10:02:00"),
-            _message("1", APPLICANT_ROLE, "Первое", "2026-01-01T10:01:00"),
-            _message("3", "SYSTEM", "Системное", "2026-01-01T10:03:00"),
+            _message("2", EMPLOYER_ROLE, "Второе", "2026-01-01T10:02:00+0300"),
+            _message("1", APPLICANT_ROLE, "Первое", "2026-01-01T10:01:00+0300"),
+            _message("3", "SYSTEM", "Системное", "2026-01-01T10:03:00+0300"),
         ]
     )
 
     assert initiated_by_us is True
     assert context == ["Я: Первое", "Работодатель: Второе"]
-
-
-def test_idempotency_key_is_stable_per_employer_turn() -> None:
-    first = deterministic_idempotency_key("chat-1", "message-42")
-    second = deterministic_idempotency_key("chat-1", "message-42")
-    other_turn = deterministic_idempotency_key("chat-1", "message-43")
-
-    assert first == second
-    assert first != other_turn
 
 
 def test_hhcli_builds_profile_command() -> None:
@@ -195,7 +176,7 @@ def test_hhcli_builds_profile_command() -> None:
     ]
 
 
-def test_hhcli_call_api_parses_json_and_formulates_json_post(monkeypatch) -> None:
+def test_hhcli_call_api_formulates_negotiation_message_post(monkeypatch) -> None:
     completed = subprocess.CompletedProcess(
         args=[],
         returncode=0,
@@ -206,9 +187,9 @@ def test_hhcli_call_api_parses_json_and_formulates_json_post(monkeypatch) -> Non
     monkeypatch.setattr("hh_applicant_tool.automation.reply_worker.subprocess.run", run)
 
     result = HHCLI("account-1").call_api(
-        "/common/chats/chat-1/messages",
+        "/negotiations/chat-1/messages",
         method="POST",
-        json_data={"text": "Привет"},
+        form_params={"message": "Привет"},
     )
 
     assert result == {"id": "sent"}
@@ -220,8 +201,8 @@ def test_hhcli_call_api_parses_json_and_formulates_json_post(monkeypatch) -> Non
         "account-1",
     ]
     assert "--method" in command
-    assert "--data" in command
-    assert json.loads(command[command.index("--data") + 1]) == {"text": "Привет"}
+    assert "message=Привет" in command
+    assert "--data" not in command
 
 
 def test_hhcli_call_api_wraps_process_and_json_errors(monkeypatch) -> None:
@@ -254,8 +235,12 @@ def test_collect_candidate_chats_only_keeps_unblocked_employer_turns() -> None:
     def route(endpoint: str, **_kwargs: Any) -> dict[str, Any]:
         if "/messages" in endpoint:
             messages = {
-                "reply-me": [_message("1", EMPLOYER_ROLE, "Привет", "2026-01-01")],
-                "already-replied": [_message("2", APPLICANT_ROLE, "Ответ", "2026-01-01")],
+                "reply-me": [
+                    _message("1", EMPLOYER_ROLE, "Привет", "2026-01-01T10:00:00+0300")
+                ],
+                "already-replied": [
+                    _message("2", APPLICANT_ROLE, "Ответ", "2026-01-01T10:01:00+0300")
+                ],
             }
             negotiation_id = endpoint.split("/")[2]
             return {"items": messages.get(negotiation_id, []), "pages": 1}
@@ -286,15 +271,28 @@ def test_make_decision_builds_context_and_vacancy_metadata() -> None:
     hh = Mock()
     hh.call_api.return_value = {
         "items": [
-            _message("applicant-1", APPLICANT_ROLE, "Здравствуйте", "2026-01-01T10:00:00"),
-            _message("employer-1", EMPLOYER_ROLE, "Когда созвон?", "2026-01-01T10:01:00"),
+            _message(
+                "applicant-1",
+                APPLICANT_ROLE,
+                "Здравствуйте",
+                "2026-01-01T10:00:00+0300",
+            ),
+            _message(
+                "employer-1",
+                EMPLOYER_ROLE,
+                "Когда созвон?",
+                "2026-01-01T10:01:00+0300",
+            ),
         ],
         "pages": 1,
     }
     worker = ReplyWorker(ReplyWorkerConfig(), hh=hh, ai=None, system_prompt="prompt")
 
     decision = worker.make_decision(
-        {"id": "chat-1", "vacancy": {"name": "React developer", "employer": {"name": "Acme"}}}
+        {
+            "id": "chat-1",
+            "vacancy": {"name": "React developer", "employer": {"name": "Acme"}},
+        }
     )
 
     assert decision is not None
@@ -305,11 +303,25 @@ def test_make_decision_builds_context_and_vacancy_metadata() -> None:
     assert decision.employer_name == "Acme"
 
 
-def test_make_decision_fails_closed_when_write_is_not_allowed() -> None:
-    detail = _detail(_message("employer-1", EMPLOYER_ROLE, "Привет", "2026-01-01"))
-    detail["chat_states"] = {"write_message_state": {"allowed": False}}
+def test_make_decision_skips_when_applicant_is_latest() -> None:
     hh = Mock()
-    hh.call_api.return_value = detail
+    hh.call_api.return_value = {
+        "items": [
+            _message(
+                "applicant-2",
+                APPLICANT_ROLE,
+                "Уже ответил",
+                "2026-01-01T10:02:00+0300",
+            ),
+            _message(
+                "employer-1",
+                EMPLOYER_ROLE,
+                "Привет",
+                "2026-01-01T10:01:00+0300",
+            ),
+        ],
+        "pages": 1,
+    }
     worker = ReplyWorker(ReplyWorkerConfig(), hh=hh, ai=None, system_prompt="prompt")
 
     assert worker.make_decision({"id": "chat-1"}) is None
@@ -356,19 +368,36 @@ def test_generate_reply_fails_closed_on_ai_error() -> None:
 def test_is_still_current_accepts_same_employer_turn() -> None:
     hh = Mock()
     hh.call_api.return_value = {
-        "items": [_message("employer-1", EMPLOYER_ROLE, "Вопрос", "2026-01-01T10:00:00")],
+        "items": [
+            _message(
+                "employer-1",
+                EMPLOYER_ROLE,
+                "Вопрос",
+                "2026-01-01T10:00:00+0300",
+            )
+        ],
         "pages": 1,
     }
 
     assert _live_worker(hh=hh).is_still_current(_decision()) is True
 
 
-def test_is_still_current_fails_closed_when_chat_changed() -> None:
+def test_is_still_current_fails_closed_when_chat_changed_even_if_api_is_newest_first() -> None:
     hh = Mock()
     hh.call_api.return_value = {
         "items": [
-            _message("employer-1", EMPLOYER_ROLE, "Вопрос", "2026-01-01T10:00:00"),
-            _message("applicant-2", APPLICANT_ROLE, "Уже ответил вручную", "2026-01-01T10:01:00"),
+            _message(
+                "applicant-2",
+                APPLICANT_ROLE,
+                "Уже ответил вручную",
+                "2026-01-01T10:01:00+0300",
+            ),
+            _message(
+                "employer-1",
+                EMPLOYER_ROLE,
+                "Вопрос",
+                "2026-01-01T10:00:00+0300",
+            ),
         ],
         "pages": 1,
     }
@@ -419,7 +448,7 @@ def test_failed_send_is_treated_as_success_if_message_is_already_visible() -> No
                         "applicant-2",
                         APPLICANT_ROLE,
                         "Готов созвониться завтра",
-                        "2026-01-01T10:01:00",
+                        "2026-01-01T10:01:00+0300",
                     )
                 ],
                 "pages": 1,
@@ -443,7 +472,14 @@ def test_failed_send_returns_false_when_message_is_not_visible() -> None:
             if method == "POST":
                 raise HHCLIError("network down")
             return {
-                "items": [_message("employer-1", EMPLOYER_ROLE, "Вопрос", "2026-01-01T10:00:00")],
+                "items": [
+                    _message(
+                        "employer-1",
+                        EMPLOYER_ROLE,
+                        "Вопрос",
+                        "2026-01-01T10:00:00+0300",
+                    )
+                ],
                 "pages": 1,
             }
 
