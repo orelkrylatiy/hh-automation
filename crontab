@@ -21,8 +21,9 @@ SHELL=/bin/bash
 # successful responses or until APPLY_PAGES are exhausted.
 10 9 * * * cd /app && /bin/bash /app/scripts/cron-job.sh apply >> /app/logs/cron.log 2>&1
 
-# Poll chats hourly through the current /common/chats API. Each employer turn
-# has a deterministic idempotency key, so retries cannot create duplicate sends.
+# Poll chats hourly through /negotiations. The worker re-fetches the history
+# immediately before POST and sends only while the same employer message is
+# still the newest turn; ambiguous message ordering fails closed.
 25 9-21 * * * cd /app && /bin/bash /app/scripts/cron-job.sh reply >> /app/logs/cron.log 2>&1
 
 # No separate refresh-token cron is needed: ApiClient refreshes access tokens
