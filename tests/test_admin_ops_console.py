@@ -3,10 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import admin.ops_console as ops_console
-from admin.ui_app import app
+
+
+def _client() -> TestClient:
+    """Test operational routes without mutating the legacy backend app."""
+    return TestClient(ops_console.install_ops_routes(FastAPI()))
 
 
 def test_apply_args_match_production_wrapper_contract():
@@ -59,10 +64,20 @@ def test_live_apply_requires_explicit_confirmation():
 def test_log_sources_are_allowlisted(tmp_path, monkeypatch):
     monkeypatch.setattr(ops_console, "PROFILE_LOG_DIR", tmp_path / "profiles")
     monkeypatch.setattr(ops_console, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(ops_console.backend, "_log_path", lambda profile: tmp_path / profile / "log.txt")
+    monkeypatch.setattr(
+        ops_console.backend,
+        "_log_path",
+        lambda profile: tmp_path / profile / "log.txt",
+    )
 
-    assert ops_console._profile_log_path("default", "apply") == tmp_path / "profiles" / "default-apply.log"
-    assert ops_console._profile_log_path("default", "cron") == tmp_path / "logs" / "cron.log"
+    assert (
+        ops_console._profile_log_path("default", "apply")
+        == tmp_path / "profiles" / "default-apply.log"
+    )
+    assert (
+        ops_console._profile_log_path("default", "cron")
+        == tmp_path / "logs" / "cron.log"
+    )
 
     with pytest.raises(Exception) as error:
         ops_console._profile_log_path("default", "../../etc/passwd")
@@ -77,7 +92,7 @@ def test_admin_apply_endpoint_delegates_to_all_profiles_wrapper(monkeypatch):
         return {"op_id": "test-op", **kwargs}
 
     monkeypatch.setattr(ops_console, "_start_wrapper_operation", fake_start)
-    client = TestClient(app)
+    client = _client()
 
     response = client.post(
         "/api/ops/run/apply",
@@ -110,7 +125,7 @@ def test_admin_reply_endpoint_uses_production_reply_wrapper(monkeypatch):
         return {"op_id": "reply-op", **kwargs}
 
     monkeypatch.setattr(ops_console, "_start_wrapper_operation", fake_start)
-    client = TestClient(app)
+    client = _client()
 
     response = client.post(
         "/api/ops/run/reply",
@@ -123,7 +138,7 @@ def test_admin_reply_endpoint_uses_production_reply_wrapper(monkeypatch):
 
 
 def test_legacy_full_apply_endpoint_is_disabled():
-    client = TestClient(app)
+    client = _client()
 
     response = client.post("/api/run/apply-vacancies-full", json={})
 
@@ -136,10 +151,10 @@ def test_runtime_scripts_expose_admin_parity_controls():
     apply_script = (root / "scripts" / "apply.sh").read_text(encoding="utf-8")
     all_profiles = (root / "scripts" / "all-profiles.sh").read_text(encoding="utf-8")
 
-    assert 'apply-safe' in apply_script
-    assert '--response-delay' in apply_script
-    assert '--resume-id' in apply_script
-    assert 'HH_ONLY_PROFILE' in all_profiles
-    assert 'HH_FAIL_ON_LOCKED_PROFILE' in all_profiles
-    assert 'HH_RUN_START' in all_profiles
-    assert 'HH_RUN_END' in all_profiles
+    assert "apply-safe" in apply_script
+    assert "--response-delay" in apply_script
+    assert "--resume-id" in apply_script
+    assert "HH_ONLY_PROFILE" in all_profiles
+    assert "HH_FAIL_ON_LOCKED_PROFILE" in all_profiles
+    assert "HH_RUN_START" in all_profiles
+    assert "HH_RUN_END" in all_profiles
