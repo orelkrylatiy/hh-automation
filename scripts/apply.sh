@@ -106,6 +106,11 @@ its path with APPLY_HARD_FILTER_FILE. EXCLUDED_FILTER remains available as an
 inline runtime override, but the repository does not hardcode vacancy stop words
 inside the application code.
 
+Cover-letter AI is preferred, but it is not a single point of failure. The
+profile config may define cover_letter_fallback.message; if AI initialization or
+generation fails, apply-safe sends that static template instead. A built-in
+legacy template remains the final fallback when the config section is absent.
+
 The scan depth is intentionally independent from --limit. This lets the worker
 skip irrelevant/already-applied vacancies and continue until it reaches the
 successful-application quota or exhausts the configured pages.
@@ -184,7 +189,9 @@ CHECK_ARGS=(--purpose cover-letter)
 if [[ -n "$PROFILE_ID" ]]; then
     CHECK_ARGS+=(--profile "$PROFILE_ID")
 fi
-python3 "$SCRIPT_DIR/check_ai.py" "${CHECK_ARGS[@]}"
+if ! python3 "$SCRIPT_DIR/check_ai.py" "${CHECK_ARGS[@]}"; then
+    echo "Cover-letter AI preflight failed; continuing with static fallback armed" >&2
+fi
 
 HH_CMD=(hh-applicant-tool --no-auto-auth)
 if [[ -n "$PROFILE_ID" ]]; then
@@ -197,7 +204,7 @@ if [[ "$RUN_MODE" == "dry-run" ]]; then
 fi
 
 APPLY_CMD=(
-    "${HH_CMD[@]}" apply-vacancies
+    "${HH_CMD[@]}" apply-safe
     --search "$SEARCH_QUERY"
     --ai
     --system-prompt "$RENDERED_SYSTEM_PROMPT"
