@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Cron-oriented HH chat reply worker.
 
-The worker prefers the current /common/chats API. Live mode is fail-closed for
-configuration errors, revalidates the last employer message before sending,
-and uses a deterministic idempotency key for each employer turn. If a valid
-LLM provider fails at runtime after its retries, an optional static fallback
-reply can keep the conversation alive.
+The worker uses the applicant /negotiations API, revalidates the exact last
+employer message immediately before sending, and treats malformed/ambiguous
+message ordering as non-actionable. If a valid LLM provider fails at runtime
+after its retries, an optional static fallback reply can keep the conversation
+alive.
 """
 
 from __future__ import annotations
