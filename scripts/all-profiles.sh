@@ -14,7 +14,11 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
 fi
 
 PROFILES_LIST=()
-if [[ -f "$PROJECT_ROOT/.profiles" ]]; then
+# Operational callers such as the admin console can explicitly select exactly
+# one profile while still reusing this wrapper's flock and persistent logs.
+if [[ -n "${HH_ONLY_PROFILE:-}" ]]; then
+    PROFILES_LIST=("$HH_ONLY_PROFILE")
+elif [[ -f "$PROJECT_ROOT/.profiles" ]]; then
     while IFS= read -r profile; do
         [[ -n "$profile" ]] && PROFILES_LIST+=("$profile")
     done < <(sed -e 's/[[:space:]]*#.*$//' -e '/^[[:space:]]*$/d' "$PROJECT_ROOT/.profiles")
@@ -129,6 +133,12 @@ start_profile() {
         if ! flock -n 9; then
             echo "[$(date '+%F %T')] HH_RUN_SKIP profile=$profile command=$COMMAND mode=$RUN_MODE_MARKER status=0"
             echo "Profile $profile is already being processed; skipped"
+            # Cron intentionally treats a busy account as a harmless skip. The
+            # admin console opts into a non-zero status so the UI never reports
+            # a skipped click as a successful action.
+            if [[ "${HH_FAIL_ON_LOCKED_PROFILE:-0}" == "1" ]]; then
+                exit 75
+            fi
             exit 0
         fi
 
