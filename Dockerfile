@@ -35,6 +35,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 COPY admin /app/admin
 COPY config /app/config
 COPY prompts /app/prompts
+COPY rules /app/rules
 COPY scripts /app/scripts
 COPY crontab /app/crontab
 COPY container-entrypoint.sh /app/container-entrypoint.sh
