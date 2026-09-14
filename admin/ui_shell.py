@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 
 _UI_STYLESHEET = '<link rel="stylesheet" href="/admin-ui.css?v=3"/>'
+_OPS_STYLESHEET = '<link rel="stylesheet" href="/admin-ops.css?v=1"/>'
 _UI_SCRIPT = '<script src="/admin-ui.js?v=3" defer></script>'
 _OPS_SCRIPT = '<script src="/admin-ops.js?v=1" defer></script>'
 _ANIMATE_CDN_RE = re.compile(
@@ -17,10 +18,15 @@ def render_index_html(index_html: str) -> str:
     """Inject local visual and operational layers into the legacy frontend."""
     html = _ANIMATE_CDN_RE.sub("", index_html)
 
+    styles: list[str] = []
     if "/admin-ui.css" not in html:
+        styles.append(_UI_STYLESHEET)
+    if "/admin-ops.css" not in html:
+        styles.append(_OPS_STYLESHEET)
+    if styles:
         if "</head>" not in html:
             raise ValueError("admin index is missing </head>")
-        html = html.replace("</head>", f"{_UI_STYLESHEET}\n</head>", 1)
+        html = html.replace("</head>", "\n".join(styles) + "\n</head>", 1)
 
     scripts: list[str] = []
     if "/admin-ui.js" not in html:
