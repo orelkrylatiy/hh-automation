@@ -74,10 +74,7 @@ def test_log_sources_are_allowlisted(tmp_path, monkeypatch):
         ops_console._profile_log_path("default", "apply")
         == tmp_path / "profiles" / "default-apply.log"
     )
-    assert (
-        ops_console._profile_log_path("default", "cron")
-        == tmp_path / "logs" / "cron.log"
-    )
+    assert ops_console._profile_log_path("default", "cron") == tmp_path / "logs" / "cron.log"
 
     with pytest.raises(Exception) as error:
         ops_console._profile_log_path("default", "../../etc/passwd")
