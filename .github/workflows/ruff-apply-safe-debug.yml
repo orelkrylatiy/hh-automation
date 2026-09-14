@@ -1,0 +1,20 @@
+name: Ruff apply-safe debug
+
+on:
+  push:
+    branches: ["review/ruff-apply-safe-debug-20260914"]
+
+permissions:
+  contents: read
+
+jobs:
+  ruff-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install ruff==0.16.5
+      - name: Show exact Ruff fix
+        run: ruff check src/hh_applicant_tool/operations/apply_safe.py --fix --diff || true
