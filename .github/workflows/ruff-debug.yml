@@ -1,0 +1,20 @@
+name: Ruff debug
+
+on:
+  push:
+    branches: ["review/ruff-debug-20260914"]
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install ruff==0.16.5
+      - name: Print import fix
+        run: ruff check --select I --fix --diff tests/test_reply_worker.py
