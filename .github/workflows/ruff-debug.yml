@@ -16,9 +16,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install ruff==0.16.5
-      - name: Print format diff
+      - name: Print regression lint and format diff
         run: |
-          ruff format --diff \
-            src/hh_applicant_tool/automation/reply_worker.py \
-            scripts/reply_iterative_ai.py \
-            tests/test_reply_worker.py
+          ruff check --diff tests/test_reply_worker_negotiation_regression.py
+          ruff format --diff tests/test_reply_worker_negotiation_regression.py
