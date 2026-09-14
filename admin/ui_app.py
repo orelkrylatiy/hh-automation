@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 
 from .app import app as backend_app
+from .ops_console import install_ops_routes
 from .ui_shell import render_index_html
 
 _ADMIN_DIR = Path(__file__).parent
@@ -56,9 +57,10 @@ def install_ui_routes(target: FastAPI) -> FastAPI:
     return target
 
 
-# ``admin.app`` remains the backend source of truth. We swap only the root
-# shell and local visual assets; auth middleware and all API endpoints remain.
-app = install_ui_routes(backend_app)
+# ``admin.app`` remains the backend/data source of truth. The ops layer swaps
+# only unsafe legacy run endpoints for the same wrappers used by cron; the UI
+# layer then replaces the HTML shell and local visual assets.
+app = install_ui_routes(install_ops_routes(backend_app))
 
 
 if __name__ == "__main__":
